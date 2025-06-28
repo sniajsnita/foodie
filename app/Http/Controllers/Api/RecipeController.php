@@ -9,88 +9,102 @@ use Illuminate\Support\Facades\Storage;
 
 class RecipeController extends Controller
 {
-    /**
-     * Menampilkan semua resep.
-     */
+    /* -----------------------------------------------------------------
+     |  Helper privat: format satu resep
+     |-----------------------------------------------------------------*/
+    private function transform(Recipe $recipe): Recipe
+    {
+        $recipe->ingredients = explode(',', $recipe->ingredients);
+        $recipe->steps       = explode(',', $recipe->steps);
+        $recipe->photo_url   = $recipe->photo ? asset('storage/'.$recipe->photo) : null;
+
+        return $recipe;
+    }
+
+    /* -----------------------------------------------------------------
+     |  CRUD
+     |-----------------------------------------------------------------*/
+    /** GET /recipes */
     public function index()
     {
-        $recipes = Recipe::all()->map(function ($recipe) {
-        $recipe->ingredients = explode(',', $recipe->ingredients);
-        $recipe->steps = explode(',', $recipe->steps);
-        return $recipe;
-    });
-    return response()->json($recipes);
+        $recipes = Recipe::with('category')->get()->map(fn ($r) => $this->transform($r));
+
+        return response()->json($recipes);
     }
 
-    /**
-     * Menyimpan resep baru.
-     */
+    /** POST /recipes */
     public function store(Request $request)
     {
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'photo' => 'nullable|image|max:2048',
-            'ingredients' => 'required|array',
-            'steps' => 'required|array',
-            'duration' => 'required|integer',
-            'servings' => 'required|integer',
+        $validated = $request->validate([
+            'title'        => 'required|string|max:255',
+            'description'  => 'nullable|string',
+            'photo'        => 'nullable|image|max:2048',
+            'ingredients'  => 'required|array',
+            'steps'        => 'required|array',
+            'duration'     => 'required|integer',
+            'servings'     => 'required|integer',
+            'category_id'  => 'required|exists:categories,id',
         ]);
 
-        $photoPath = null;
-        if ($request->hasFile('photo')) {
-            $photoPath = $request->file('photo')->store('recipes', 'public');
-        }
+        // foto
+        $photoPath = $request->file('photo')
+            ? $request->file('photo')->store('recipes', 'public')
+            : null;
 
         $recipe = Recipe::create([
-            'title' => $request->title,
-            'description' => $request->description,
-            'photo' => $photoPath,
-            'ingredients' => implode(',', $request->ingredients),
-            'steps' => implode(',', $request->steps),
-            'duration' => $request->duration,
-            'servings' => $request->servings,
-        ]);
+            'title'        => $validated['title'],
+            'description'  => $validated['description'] ?? null,
+            'photo'        => $photoPath,
+            'ingredients'  => implode(',', $validated['ingredients']),
+            'steps'        => implode(',', $validated['steps']),
+            'duration'     => $validated['duration'],
+            'servings'     => $validated['servings'],
+            'category_id'  => $validated['category_id'],
+        ])->load('category');
 
-
-        return response()->json($recipe, 201);
+        return response()->json($this->transform($recipe), 201);
     }
 
-    /**
-     * Menampilkan detail resep berdasarkan ID.
-     */
-    public function show($id)
+    /** GET /recipes/{id} */
+    public function show(int $id)
     {
-        $recipe = Recipe::findOrFail($id);
-        $recipe->ingredients = explode(',', $recipe->ingredients);
-        $recipe->steps = explode(',', $recipe->steps);
-        return response()->json($recipe);
+        $recipe = Recipe::with('category')->findOrFail($id);
+
+        return response()->json($this->transform($recipe));
     }
 
-    /**
-     * Memperbarui data resep.
-     */
-    public function update(Request $request, $id)
+    /** PUT /recipes/{id} */
+    public function update(Request $request, int $id)
     {
         $recipe = Recipe::findOrFail($id);
 
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'photo' => 'nullable|image|max:2048',
-            'ingredients' => 'required|array',
-            'steps' => 'required|array',
-            'duration' => 'required|integer',
-            'servings' => 'required|integer',
+        $validated = $request->validate([
+            'title'        => 'sometimes|required|string|max:255',
+            'description'  => 'nullable|string',
+            'photo'        => 'nullable|image|max:2048',
+            'ingredients'  => 'sometimes|required|array',
+            'steps'        => 'sometimes|required|array',
+            'duration'     => 'sometimes|required|integer',
+            'servings'     => 'sometimes|required|integer',
+            'category_id'  => 'sometimes|required|exists:categories,id',
         ]);
 
-        $recipe->title = $request->title;
-        $recipe->description = $request->description;
-        $recipe->ingredients = implode(',', $request->ingredients);
-        $recipe->steps = implode(',', $request->steps);
-        $recipe->duration = $request->duration;
-        $recipe->servings = $request->servings;
+        // update kolom biasa
+        $recipe->fill(array_filter([
+            'title'        => $validated['title']        ?? null,
+            'description'  => $validated['description']  ?? null,
+            'ingredients'  => isset($validated['ingredients'])
+                                ? implode(',', $validated['ingredients'])
+                                : null,
+            'steps'        => isset($validated['steps'])
+                                ? implode(',', $validated['steps'])
+                                : null,
+            'duration'     => $validated['duration']     ?? null,
+            'servings'     => $validated['servings']     ?? null,
+            'category_id'  => $validated['category_id']  ?? null,
+        ]));
 
+        // ganti foto jika ada file baru
         if ($request->hasFile('photo')) {
             if ($recipe->photo) {
                 Storage::disk('public')->delete($recipe->photo);
@@ -100,13 +114,11 @@ class RecipeController extends Controller
 
         $recipe->save();
 
-        return response()->json($recipe);
+        return response()->json($this->transform($recipe->load('category')));
     }
 
-    /**
-     * Menghapus resep.
-     */
-    public function destroy($id)
+    /** DELETE /recipes/{id} */
+    public function destroy(int $id)
     {
         $recipe = Recipe::findOrFail($id);
 
@@ -116,6 +128,6 @@ class RecipeController extends Controller
 
         $recipe->delete();
 
-        return response()->json(['message' => 'Resep berhasil dihapus.'], 200);
+        return response()->json(['message' => 'Resep berhasil dihapus.']);
     }
 }

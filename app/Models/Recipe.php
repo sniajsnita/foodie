@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Category;
 
 class Recipe extends Model
 {
@@ -20,5 +21,14 @@ class Recipe extends Model
         'steps',
         'duration',
         'servings',
+        'category_id'
     ];
+
+    /**
+     * Relasi ke model Category.
+     */
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
 }

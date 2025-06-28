@@ -12,9 +12,6 @@ class CreateCoinTransactionsTable extends Migration
             $table->id();
             $table->enum('type', ['topup', 'tarik']);
             $table->integer('amount');
-            $table->string('name');
-            $table->string('email');
-            $table->string('phone');
             $table->string('proof');
             $table->timestamps();
         });

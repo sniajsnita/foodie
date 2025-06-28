@@ -20,6 +20,12 @@ return new class extends Migration
             $table->text('steps');       // langkah-langkah
             $table->integer('duration'); // durasi (menit)
             $table->integer('servings'); // porsi
+
+            // FOREIGN KEY
+            $table->foreignId('category_id')
+                ->constrained()           // otomatis ke table `categories`, kolom `id`
+                ->cascadeOnDelete();      // kalau kategori dihapus, resep juga ikut dihapus
+
             $table->timestamps();
         });
     }
